@@ -71,14 +71,6 @@ plot(backmort.glmer2)
 
 ##That doesn't look as bad. I'll move forward without that point, but it means I'll need to remove the predator data points in that bath too.
 
-library(merTools) # For the predictInterval function which allows for SE predictions on glmer
-
-Control.predicts <- Control.data%>%
-  filter(Temp2C < 35)%>%
-  cbind(predictInterval(backmort.glmer2, newdata = ., type = "probability", 
-                        which = "fixed", include.resid.var = F, level = .95))%>%
-  mutate(Backmort = 100 - fit*100)
-
 
 ##Trying another method for getting predicted values.
 library(bootpredictlme4)
@@ -100,7 +92,14 @@ Control.predicts2%>%
   geom_line(aes(y = 100 - fit*100 )) +
   geom_point() +
   geom_ribbon(aes(ymax = 100 - upr*100, ymin = 100 - lwr*100), alpha = 0.25, linetype = 0) +
-  theme_classic()
+  theme_classic() +
+  geom_point(data = filter(df, Pond == "Control", Temp2C >35), shape = 1) +
+  labs(y = "Background mortality ± CI",
+       x = "Temperature (C)") +
+  theme(axis.title = element_text(size = 18),
+        axis.text = element_text(size=16))
+       
+#ggsave("Figures/backmort.jpg")
 
 ##Create a final data set 
 feed.data <- df%>%
@@ -144,9 +143,8 @@ selectmodel<- function(State){
                   control = glmerControl(optimizer = "bobyqa"))
   
   
-  
   data.frame(model = c("model1", "model2", "model3", "model4", "model5", "model6", "model7", "model8"),
-             AIC = c(AICc(model1), AICc(model2), AICc(model3), AICc(model4),
+             AICc = c(AICc(model1), AICc(model2), AICc(model3), AICc(model4),
                      AICc(model5), AICc(model6), AICc(model7), AICc(model8)))%>%
     arrange(AIC)%>%
     mutate(delta = AIC - .[1,2])%>%
@@ -160,13 +158,13 @@ selectmodel("MI")
 selectmodel("MO")
 selectmodel("TX")
 
-##Three of the texas models are giving singularity warnings. Running each one here to figure out which ones
+##Six of the texas models are giving singularity warnings. Running each one here to figure out which ones
 
 #Model 1
 feed.data%>%
   filter(Site == "TX", Numeaten > 0, Pond != "Control")%>%
   glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ poly(Temp2C, 2) + (1|Pond) + (1|Bath) + scale(Predmass), family = "binomial", data = .,
-        control = glmerControl(optimizer = "bobyqa"))
+        control = glmerControl(optimizer = "bobyqa"))%>%str()
 
 #Model 2
 feed.data%>%
@@ -212,7 +210,8 @@ feed.data%>%
 
 #Models 3 and 7 are the ones that are converging. 7 had the lowest AIC of the eight models, and 3 had the third lowest with delta AIC = 2.76. I'll go with 7
 
-##The delta AIC for those two is >2, so performing a likelihood ratio test
+##The delta AIC for those two is <2, so performing a likelihood ratio test
+
 
 
 ##Running the best fit glm's for each species
@@ -313,7 +312,7 @@ final.data%>%
   ggplot(aes(x = Temp2C, y = fit*100, color = Site, fill = Site)) +
   facet_wrap(~Site, labeller = labeller(Site = c("MI" = "Michigan", "MO" = "Missouri", "TX" = "Texas"))) +
   geom_point(aes(y = Numeaten)) +
-  geom_line(size = 1.5) +
+  geom_line(linewidth = 1.5) +
   geom_ribbon(alpha = 0.25, aes(ymin = lwr*100, ymax = upr*100), linetype = 0) +
   theme_classic() +
   labs(x = "Temperature (°C)", y = "Number Eaten ± CI") +   
