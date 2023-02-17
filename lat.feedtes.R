@@ -89,17 +89,17 @@ Control.predicts2 <- Control.data%>%
 ##Plot with data
 Control.predicts2%>%
   ggplot(aes(x = Temp2C, y = Dead)) +
-  geom_line(aes(y = 100 - fit*100 )) +
-  geom_point() +
+  geom_line(aes(y = 100 - fit*100 ), linewidth = 2) +
+  geom_point(size = 3) +
   geom_ribbon(aes(ymax = 100 - upr*100, ymin = 100 - lwr*100), alpha = 0.25, linetype = 0) +
   theme_classic() +
-  geom_point(data = filter(df, Pond == "Control", Temp2C >35), shape = 1) +
-  labs(y = "Background mortality ± CI",
+  geom_point(data = filter(df, Pond == "Control", Temp2C >35), shape = 1, size = 3) +
+  labs(y = expression(paste(italic("Daphnia pulex"), " background mortality ± CI")),
        x = "Temperature (C)") +
   theme(axis.title = element_text(size = 18),
         axis.text = element_text(size=16))
        
-#ggsave("Figures/backmort.jpg")
+ggsave("Figures/backmort.jpg")
 
 ##Create a final data set 
 feed.data <- df%>%
@@ -235,7 +235,19 @@ TXglmer <- feed.data%>%
         control = glmerControl(optimizer = "bobyqa"))
 
 
+#Get model results
+library(car)
+MIglmer
+Anova(MIglmer, 3)
 
+MOglmer
+Anova(MOglmer, 3)
+
+TXglmer
+Anova(TXglmer, 3)
+
+
+#Get predicted values and add to data frame
 ##MI
 
 ###Create the subset data
@@ -315,7 +327,7 @@ final.data%>%
   geom_line(linewidth = 1.5) +
   geom_ribbon(alpha = 0.25, aes(ymin = lwr*100, ymax = upr*100), linetype = 0) +
   theme_classic() +
-  labs(x = "Temperature (°C)", y = "Number Eaten ± CI") +   
+  labs(x = "Temperature (°C)", y = "Feeding rate ± CI") +   
   theme(axis.title = element_text(size = 24),
         axis.text = element_text(size=20),
         strip.text = element_text(size=16),
