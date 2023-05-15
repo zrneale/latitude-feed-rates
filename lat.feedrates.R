@@ -6,7 +6,8 @@ library(tidyverse)
 
 #Load data
 
-df <- read.csv("Data/lat-feed-data.csv")
+df <- read.csv("Data/lat-feed-data.csv")%>%
+  mutate(across(c(site, chamber, bath, pond, id), as.factor))
   
 
 #Calculate background mortality with binomial glmer
@@ -15,29 +16,29 @@ df <- read.csv("Data/lat-feed-data.csv")
 library(lme4)
 
 ##Create a subset of the data with just control treatments. Remove the bath over 35C because that appears to be outlier
-Control.data <- df%>%
+controlDf <- df%>%
   filter(pond == "Control")%>%
   filter(temp < 35)
 
 #Run glmer. Remove the water bath above 35C because it had very high background mortality of prey     
-backmort.glmer <- Control.data%>%
+backMortGlmer <- controlDf%>%
   glmer(data = ., cbind(surv, dead) ~ temp  + (1|site) + (1|bath), family = "binomial")
 
 
 ##Obtain predicted values of background mortality
 library(bootpredictlme4)
 
-Control.predicts <- Control.data%>%
-  predict(backmort.glmer, newdata = ., re.form = NA, se.fit = T, nsim = 100, type = "response")
+controlFit <- controlDf%>%
+  predict(backMortGlmer, newdata = ., re.form = NA, se.fit = T, nsim = 100, type = "response")
 
-Control.predicts2 <- Control.data%>%
-  mutate(fit = unname(data.frame(Control.predicts$fit)$Control.predicts.fit),
-         lwr = unname(t(data.frame(Control.predicts$ci.fit))[,1]),
-         upr = unname(t(data.frame(Control.predicts$ci.fit))[,2]),
-         Backmort = 100 - fit*100)
+controlFit2 <- controlDf%>%
+  mutate(fit = unname(data.frame(controlFit$fit)$controlFit.fit),
+         lwr = unname(t(data.frame(controlFit$ci.fit))[,1]),
+         upr = unname(t(data.frame(controlFit$ci.fit))[,2]),
+         backMort = 100 - fit*100)
 
 ##Plot with data
-Control.predicts2%>%
+controlFit2%>%
   ggplot(aes(x = temp, y = dead)) +
   geom_line(aes(y = 100 - fit*100 ), linewidth = 2) +
   geom_point(size = 3) +
@@ -48,15 +49,16 @@ Control.predicts2%>%
        x = "Temperature (C)") +
   theme(axis.title = element_text(size = 18),
         axis.text = element_text(size=16))
-       
-ggsave("Figures/backmort.jpg")
+
+#Uncomment to save   
+#ggsave("Figures/backMort.jpg")
 
 ##Create a final data set 
-feed.data <- df%>%
+feedRateDf <- df%>%
   filter(temp < 35)%>%
-  left_join(dplyr::select(Control.predicts2, site, chamber, bath, Backmort), by = c("site", "chamber", "bath"))%>%
-  mutate(Numeaten = dead - Backmort)%>%
-  mutate(Numeaten = replace(Numeaten, Numeaten < 0, 0))
+  left_join(dplyr::select(controlFit2, site, chamber, bath, backMort), by = c("site", "chamber", "bath"))%>%
+  mutate(numEaten = dead - backMort)%>%
+  mutate(numEaten = replace(numEaten, numEaten < 0, 0))
 
 
 
@@ -66,38 +68,38 @@ feed.data <- df%>%
 
 library(MuMIn)
 
-selectmodel<- function(State){
+selectmodel<- function(state){
   
   ##Subset the data
-  df <- feed.data%>%
-    filter(site == State, Numeaten > 0, pond != "Control")
+  df <- feedRateDf%>%
+    filter(site == state, numEaten > 0, pond != "Control")
   
   
   
   ##Create each of the models
-  model1 <- glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = df,
+  model1 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = df,
                   control = glmerControl(optimizer = "bobyqa"))
-  model2 <- glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ poly(temp, 2) + (1|bath) + scale(predmass), family = "binomial", data = df,
+  model2 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|bath) + scale(predmass), family = "binomial", data = df,
                   control = glmerControl(optimizer = "bobyqa"))
-  model3 <- glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ temp + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = df,
+  model3 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = df,
                   control = glmerControl(optimizer = "bobyqa"))
-  model4 <- glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ temp + (1|bath) + scale(predmass), family = "binomial", data = df,
+  model4 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|bath) + scale(predmass), family = "binomial", data = df,
                   control = glmerControl(optimizer = "bobyqa"))
-  model5 <- glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ poly(temp, 2) + (1|pond) + (1|bath), family = "binomial", data = df,
+  model5 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath), family = "binomial", data = df,
                   control = glmerControl(optimizer = "bobyqa"))
-  model6 <- glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ poly(temp, 2) + (1|bath), family = "binomial", data = df,
+  model6 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|bath), family = "binomial", data = df,
                   control = glmerControl(optimizer = "bobyqa"))
-  model7 <- glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ temp + (1|pond) + (1|bath), family = "binomial", data = df,
+  model7 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath), family = "binomial", data = df,
                   control = glmerControl(optimizer = "bobyqa"))
-  model8 <- glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ temp + (1|bath), family = "binomial", data = df,
+  model8 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|bath), family = "binomial", data = df,
                   control = glmerControl(optimizer = "bobyqa"))
   
   
   data.frame(model = c("model1", "model2", "model3", "model4", "model5", "model6", "model7", "model8"),
              AICc = c(AICc(model1), AICc(model2), AICc(model3), AICc(model4),
                      AICc(model5), AICc(model6), AICc(model7), AICc(model8)))%>%
-    arrange(AIC)%>%
-    mutate(delta = AIC - .[1,2])%>%
+    arrange(AICc)%>%
+    mutate(delta = AICc - .[1,2])%>%
     return()
   
   
@@ -111,77 +113,77 @@ selectmodel("TX")
 ##Six of the texas models are giving singularity warnings. Running each one here to figure out which ones
 
 #Model 1
-feed.data%>%
-  filter(site == "TX", Numeaten > 0, pond != "Control")%>%
-  glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
+feedRateDf%>%
+  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))%>%str()
 
 #Model 2
-feed.data%>%
-  filter(site == "TX", Numeaten > 0, pond != "Control")%>%
-  glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ poly(temp, 2) + (1|bath) + scale(predmass), family = "binomial", data =.,
+feedRateDf%>%
+  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|bath) + scale(predmass), family = "binomial", data =.,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 3
-feed.data%>%
-  filter(site == "TX", Numeaten > 0, pond != "Control")%>%
-  glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ temp + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
+model3 <- feedRateDf%>%
+  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 4
-feed.data%>%
-  filter(site == "TX", Numeaten > 0, pond != "Control")%>%
-  glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ temp + (1|bath) + scale(predmass), family = "binomial", data = .,
+feedRateDf%>%
+  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|bath) + scale(predmass), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 5
-feed.data%>%
-  filter(site == "TX", Numeaten > 0, pond != "Control")%>%
-  glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ poly(temp, 2) + (1|pond) + (1|bath), family = "binomial", data = .,
+feedRateDf%>%
+  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 6
-feed.data%>%
-  filter(site == "TX", Numeaten > 0, pond != "Control")%>%
-  glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ poly(temp, 2) + (1|bath), family = "binomial", data =.,
+feedRateDf%>%
+  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|bath), family = "binomial", data =.,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 7
-feed.data%>%
-  filter(site == "TX", Numeaten > 0, pond != "Control")%>%
-  glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ temp + (1|pond) + (1|bath), family = "binomial", data = .,
+model7 <- feedRateDf%>%
+  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 8
-feed.data%>%
-  filter(site == "TX", Numeaten > 0, pond != "Control")%>%
-  glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ temp + (1|bath), family = "binomial", data = .,
+feedRateDf%>%
+  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|bath), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
-#Models 3 and 7 are the ones that are converging. 7 had the lowest AIC of the eight models, and 3 had the third lowest with delta AIC = 2.76. I'll go with 7
+#Models 3 and 7 are the ones that are converging. 7 had the lowest AIC of the eight models, and 3 had the third lowest with delta AIC = 2.79. I'll go with 7
 
 ##The delta AIC for those two is <2, so performing a likelihood ratio test
 
+library(lmtest)
+lrtest(model3, model7)
 
+#They aren't significantly different, so use model 7 since it's simpler
 
-##Running the best fit glm's for each species
+##Assign the best fit glm's for each species
 
-MIglmer <- feed.data%>%
-  filter(site == "MI", round(Numeaten) >0, pond != "Control", temp < 35)%>%
-  drop_na(predmass)%>%
-  glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
+MIglmer <- feedRateDf%>%
+  filter(site == "MI", round(numEaten) >0, pond != "Control", temp < 35)%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
-MOglmer <- feed.data%>%
-  filter(site == "MO", round(Numeaten) > 0, pond != "Control", temp < 35)%>%
-  drop_na(predmass)%>%
-  glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ temp + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
+MOglmer <- feedRateDf%>%
+  filter(site == "MO", round(numEaten) > 0, pond != "Control", temp < 35)%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
-TXglmer <- feed.data%>%
-  filter(site == "TX", round(Numeaten) > 0, pond != "Control", temp < 35)%>%
-  drop_na(predmass)%>%
-  glmer(cbind(round(Numeaten), round(100-Numeaten)) ~ temp + (1|pond) + (1|bath), family = "binomial", data = .,
+TXglmer <- feedRateDf%>%
+  filter(site == "TX", round(numEaten) > 0, pond != "Control", temp < 35)%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
 
@@ -201,66 +203,64 @@ Anova(TXglmer, 3)
 ##MI
 
 ###Create the subset data
-Midata <- feed.data%>%
-  filter(site == "MI", round(Numeaten) > 0, pond != "Control", temp < 35)%>%
-  drop_na(predmass) #I'll probably need to find a different solution to NA's
+MIdata <- feedRateDf%>%
+  filter(site == "MI", round(numEaten) > 0, pond != "Control", temp < 35)
 
 ###Make the predator masses equal average value to smooth the prediction curve
-Midata$predmass <- mean(Midata$predmass) #Make the predator masses equal average value to smooth the prediction curve
+MIdata$predmass <- mean(MIdata$predmass) #Make the predator masses equal average value to smooth the prediction curve
 
 
 ###Calculate the predicted values with CI
 library(bootpredictlme4)
 
-MI.predict <- predict(MIglmer, newdata = Midata, re.form = NA, se.fit = T, nsim = 1000, type = "response")
+MIfit <- predict(MIglmer, newdata = MIdata, re.form = NA, se.fit = T, nsim = 1000, type = "response")
 
 ###Create df with both the raw data and fit values
-MI.predict2 <- Midata%>%
-  mutate(fit = unname(data.frame(MI.predict$fit)$MI.predict.fit),
-         lwr = unname(t(data.frame(MI.predict$ci.fit))[,1]),
-         upr = unname(t(data.frame(MI.predict$ci.fit))[,2]))
+MIfit2 <- MIdata%>%
+  mutate(fit = unname(data.frame(MIfit$fit)$MIfit.fit),
+         lwr = unname(t(data.frame(MIfit$ci.fit))[,1]),
+         upr = unname(t(data.frame(MIfit$ci.fit))[,2]))
 
 
 
 ##MO
 ###Create the subset data
-MOdata <- feed.data%>%
-  filter(site == "MO", round(Numeaten) > 0, pond != "Control", temp < 35)%>%
-  drop_na(predmass) #I'll need to find a better thing to do with NA'a
+MOdata <- feedRateDf%>%
+  filter(site == "MO", round(numEaten) > 0, pond != "Control", temp < 35)
 
 ###Make the predator masses equal average value to smooth the prediction curve
 MOdata$predmass <- mean(MOdata$predmass) #Make the predator masses equal average value to smooth the prediction curve
 
 ###Calculate predicted values and CI
 
-MO.predict <- predict(MOglmer, newdata = MOdata, re.form = NA, se.fit = T, nsim = 1000, type = "response")
+MOfit <- predict(MOglmer, newdata = MOdata, re.form = NA, se.fit = T, nsim = 1000, type = "response")
 
 ###Create df with both the raw data and fit values
-MO.predict2 <- MOdata%>%
-  mutate(fit = unname(data.frame(MO.predict$fit)$MO.predict.fit),
-         lwr = unname(t(data.frame(MO.predict$ci.fit))[,1]),
-         upr = unname(t(data.frame(MO.predict$ci.fit))[,2]))
+MOfit2 <- MOdata%>%
+  mutate(fit = unname(data.frame(MOfit$fit)$MOfit.fit),
+         lwr = unname(t(data.frame(MOfit$ci.fit))[,1]),
+         upr = unname(t(data.frame(MOfit$ci.fit))[,2]))
 
 ##TX
 ###Create the subset data
-TXdata <- feed.data%>%
-  filter(site == "TX", round(Numeaten) > 0, pond != "Control", temp < 35)
+TXdata <- feedRateDf%>%
+  filter(site == "TX", round(numEaten) > 0, pond != "Control", temp < 35)
 
 ###Make the predator masses equal average value to smooth the prediction curve
 TXdata$predmass <- mean(TXdata$predmass) 
 
 ###Calxulate predicted values with CI
 
-TX.predict <- predict(TXglmer, newdata = TXdata, re.form = NA, se.fit = T, nsim = 1000, type = "response")
+TXfit <- predict(TXglmer, newdata = TXdata, re.form = NA, se.fit = T, nsim = 1000, type = "response")
 
 ###Create df with both the raw data and fit values
-TX.predict2 <- TXdata%>%
-  mutate(fit = unname(data.frame(TX.predict$fit)$TX.predict.fit),
-         lwr = unname(t(data.frame(TX.predict$ci.fit))[,1]),
-         upr = unname(t(data.frame(TX.predict$ci.fit))[,2]))
+TXfit2 <- TXdata%>%
+  mutate(fit = unname(data.frame(TXfit$fit)$TXfit.fit),
+         lwr = unname(t(data.frame(TXfit$ci.fit))[,1]),
+         upr = unname(t(data.frame(TXfit$ci.fit))[,2]))
 
 ###Combine each of these to a final data set
-final.data <- rbind(MI.predict2, MO.predict2, TX.predict2)
+final.data <- rbind(MIfit2, MOfit2, TXfit2)
 
 
 
@@ -273,68 +273,45 @@ final.data <- rbind(MI.predict2, MO.predict2, TX.predict2)
 ##For loop to bootstrap
 
 #Create empty data frame that the Topt's will be inserted into
-MIToptDf <- data.frame(Topt = NULL, bath = NULL, pond = NULL, sim = NULL)
+MIToptDf <- data.frame(Topt = NULL, bath = NULL, pond = NULL, predmass = NULL, sim = NULL)
 
 #For loop to resample data, run model with resampled data, extract Topt, and add Topt to data frame
-for (i in 1:1000){
+for (i in 1:10){
   
   #Resample data
-  rand.df <- pulexDf%>%
-    filter(pulexsurv > 10)%>%
-    group_by(pred, comp)%>%
+  rand.df <- MIdata%>%
     slice_sample(prop = 1, replace = T)
   
   ##Run model with resampled data. Set it to continue the loop even if the model generates an error, which occasionally happens with some resampled data
-  try(model <- rand.df%>%
-        glm.nb(pulexsurv ~ temp*pred*comp + I(temp^2), data = ., control = glm.control(maxit = 10000)), silent = TRUE)
+  model <- rand.df%>%
+    glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
+          control = glmerControl(optimizer = "bobyqa"))
   
-  #Create data set of dummy variables to get precise estimate of Topt, then extract predited Topt. This will be done for each comp x pred combination
-  
-  ##Create no pred, no comp dummy data
-  ndat <- data.frame(temp = seq(10,31, by = 0.01), pred = "N", comp = "N")
+  #Create data set of dummy variables to get precise estimate of Topt, then extract predited Topt.
+ 
+  ndat <- data.frame(temp = seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), 
+                     predmass = mean(rand.df$predmass))
   ##Extract no pred, no comp topt and add to df
-  pulexToptDf <- data.frame(Topt = ndat[which.max(predict(model, newdata = ndat, type = "response")),1],
-                            pred = "N", comp = "N", sim = i)%>%
-    rbind(pulexToptDf)
+  MIToptDf <- data.frame(Topt = ndat[which.max(predict(model, newdata = ndat, type = "response", re.form = ~0 )),1] , sim = i)%>%
+    rbind(MIToptDf)
   
-  ##Create no pred, yes comp dummy data
-  ndat <- data.frame(temp = seq(10,31, by = 0.01), pred = "N", comp = "Y")
-  ##Extract no pred, no comp topt and add to df
-  pulexToptDf <- data.frame(Topt = ndat[which.max(predict(model, newdata = ndat, type = "response")),1],
-                            pred = "N", comp = "Y", sim = i)%>%
-    rbind(pulexToptDf)
-  
-  ##Create yes pred, no comp dummy data
-  ndat <- data.frame(temp = seq(10,31, by = 0.01), pred = "Y", comp = "N")
-  ##Extract yes pred, no comp topt and add to df
-  pulexToptDf <- data.frame(Topt = ndat[which.max(predict(model, newdata = ndat, type = "response")),1],
-                            pred = "Y", comp = "N", sim = i)%>%
-    rbind(pulexToptDf)
-  
-  ##Create yes pred, no comp dummy data
-  ndat <- data.frame(temp = seq(10,31, by = 0.01), pred = "Y", comp = "Y")
-  ##Extract no pred, no comp topt and add to df
-  pulexToptDf <- data.frame(Topt = ndat[which.max(predict(model, newdata = ndat, type = "response")),1],
-                            pred = "Y", comp = "Y", sim = i)%>%
-    rbind(pulexToptDf)
 }
 
 #Uncomment to save the randomized data set
-#write.csv(pulexToptDf, "Data/pulexTopt.csv", row.names = F)
+#write.csv(MIToptDf, "Data/MITopt.csv", row.names = F)
 
 #Uncomment if uploading a previously saved randomized df
-#pulexToptDf <- read.csv("Data/pulexTopt.csv")
+#MIToptDf <- read.csv("Data/MITopt.csv")
 
 
 #Create df with average Topt's and confidence intervals for plotting
 
-pulexavgToptDf <- pulexToptDf%>%
-  group_by(pred, comp)%>%
+MIavgToptDf <- MIToptDf%>%
   summarize(temp = mean(Topt),
             lwrCI = quantile(Topt, 0.025),
             uprCI = quantile(Topt, 0.975))%>%
-  ungroup()%>%
-  mutate(pulexsurv = round(predict(pulexNegBin, newdata = ., type = "response")))
+  mutate(predmass = mean(MIdata$predmass))%>%
+  mutate(numEaten = round(predict(MIglmer, newdata = ., type = "response", re.form = ~ 0 )))
 
 
 
@@ -356,7 +333,7 @@ cbPalette <- c("#CC79A7", "#78C1EA", "#009E73", "#E69F00", "#D55E00", "#0072B2")
 final.data%>%
   ggplot(aes(x = temp, y = fit*100, color = site, fill = site)) +
   facet_wrap(~site, labeller = labeller(site = c("MI" = "Michigan", "MO" = "Missouri", "TX" = "Texas"))) +
-  geom_point(aes(y = Numeaten)) +
+  geom_point(aes(y = numEaten)) +
   geom_line(linewidth = 1.5) +
   geom_ribbon(alpha = 0.25, aes(ymin = lwr*100, ymax = upr*100), linetype = 0) +
   theme_classic() +
@@ -367,8 +344,8 @@ final.data%>%
         legend.position = 0) +
   scale_color_manual(values = cbPalette) +
   scale_fill_manual(values = cbPalette) 
-#geom_line(data = Control.predicts2, aes(x = temp, y = Backmort), color = "Black") +
-#geom_ribbon(data = Control.predicts2, aes(ymin = 100 - lwr*100, ymax = 100 - upr*100), 
+#geom_line(data = controlFit2, aes(x = temp, y = backMort), color = "Black") +
+#geom_ribbon(data = controlFit2, aes(ymin = 100 - lwr*100, ymax = 100 - upr*100), 
 #color = "black", alpha = 0.25, fill = "black", linetype = 0)
 
 
@@ -381,7 +358,7 @@ ggsave("Figures/Latresults1.pdf", width = 11.95, height = 5.37)
 
 final.data%>%
   ggplot(aes(x = temp, y = fit*100)) +
-  #geom_point(aes(y = Numeaten)) +
+  #geom_point(aes(y = numEaten)) +
   geom_line(aes(color = site), size = 2) +
   theme_classic() +
   labs(x = "Temperature (°C)", y = "# Eaten") +   
@@ -421,7 +398,7 @@ final.data%>%
   filter(site == "TX")%>%
   ggplot(aes(x = temp, y = fit*100, color = pond, fill = pond)) +
   # facet_wrap(~site) +
-  geom_point(aes(y = Numeaten)) +
+  geom_point(aes(y = numEaten)) +
   geom_line(size = 1.5) +
   geom_ribbon(alpha = 0.25, aes(ymin = lwr*100, ymax = upr*100), linetype = 0) +
   theme_classic() +
