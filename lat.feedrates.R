@@ -29,7 +29,7 @@ backMortGlmer <- controlDf%>%
 library(bootpredictlme4)
 
 controlFit <- controlDf%>%
-  predict(backMortGlmer, newdata = ., re.form = NA, se.fit = T, nsim = 100, type = "response")
+  predict(backMortGlmer, newdata = ., re.form = NA, se.fit = T, nsim = 1000, type = "response")
 
 controlFit2 <- controlDf%>%
   mutate(fit = unname(data.frame(controlFit$fit)$controlFit.fit),
@@ -58,40 +58,49 @@ feedRateDf <- df%>%
   filter(temp < 35)%>%
   left_join(dplyr::select(controlFit2, site, chamber, bath, backMort), by = c("site", "chamber", "bath"))%>%
   mutate(numEaten = dead - backMort)%>%
-  mutate(numEaten = replace(numEaten, numEaten < 0, 0))
+  mutate(numEaten = replace(numEaten, numEaten < 0, 0))%>%
+  filter(pond != "Control")
 
 
+##Look at distribution of data
+feedRateDf%>%
+  ggplot(aes(x = numEaten)) +
+  geom_histogram() +
+  theme_classic()
 
 
+#Now to run the glm's on the predator data. I'll try separate models for the 3 sites. First create subset data for each site, then create a function to run all possible models to compare AIC's within site for model selection
+#Subset data
 
-#Now to run the glm's on the predator data. I'll try separate models for the 3 sites. First I'll create a function to run all possible models to compare AIC's within site for model selection
+MIdata <- feedRateDf%>%
+  filter(site == "MI", round(numEaten) > 0, pond != "Control", temp < 35)
+
+MOdata <- feedRateDf%>%
+  filter(site == "MO", round(numEaten) > 0, pond != "Control", temp < 35)
+
+TXdata <- feedRateDf%>%
+  filter(site == "TX", round(numEaten) > 0, pond != "Control", temp < 35)
 
 library(MuMIn)
 
-selectmodel<- function(state){
-  
-  ##Subset the data
-  df <- feedRateDf%>%
-    filter(site == state, numEaten > 0, pond != "Control")
-  
-  
+selectmodel<- function(stateDf){
   
   ##Create each of the models
-  model1 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = df,
+  model1 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = stateDf,
                   control = glmerControl(optimizer = "bobyqa"))
-  model2 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|bath) + scale(predmass), family = "binomial", data = df,
+  model2 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|bath) + scale(predmass), family = "binomial", data = stateDf,
                   control = glmerControl(optimizer = "bobyqa"))
-  model3 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = df,
+  model3 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = stateDf,
                   control = glmerControl(optimizer = "bobyqa"))
-  model4 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|bath) + scale(predmass), family = "binomial", data = df,
+  model4 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|bath) + scale(predmass), family = "binomial", data = stateDf,
                   control = glmerControl(optimizer = "bobyqa"))
-  model5 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath), family = "binomial", data = df,
+  model5 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath), family = "binomial", data = stateDf,
                   control = glmerControl(optimizer = "bobyqa"))
-  model6 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|bath), family = "binomial", data = df,
+  model6 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|bath), family = "binomial", data = stateDf,
                   control = glmerControl(optimizer = "bobyqa"))
-  model7 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath), family = "binomial", data = df,
+  model7 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath), family = "binomial", data = stateDf,
                   control = glmerControl(optimizer = "bobyqa"))
-  model8 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|bath), family = "binomial", data = df,
+  model8 <- glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|bath), family = "binomial", data = stateDf,
                   control = glmerControl(optimizer = "bobyqa"))
   
   
@@ -106,57 +115,61 @@ selectmodel<- function(state){
 }
 
 ##Run the function to compare models
-selectmodel("MI")
-selectmodel("MO")
-selectmodel("TX")
+selectmodel(MIdata)
+
+#MI models 3 and 1 have ∆AICc of <2. Running a likelihood ratio test
+
+library(lmtest)
+
+lrtest(glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = MIdata,
+               control = glmerControl(optimizer = "bobyqa")),
+         glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = MIdata,
+               control = glmerControl(optimizer = "bobyqa")))
+
+
+selectmodel(MOdata)
+
+selectmodel(TXdata)
 
 ##Six of the texas models are giving singularity warnings. Running each one here to figure out which ones
 
 #Model 1
-feedRateDf%>%
-  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+TXdata%>%
   glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))%>%str()
 
 #Model 2
-feedRateDf%>%
-  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+TXdata%>%
   glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|bath) + scale(predmass), family = "binomial", data =.,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 3
-model3 <- feedRateDf%>%
-  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+model3 <- TXdata%>%
   glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 4
-feedRateDf%>%
-  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+TXdata%>%
   glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|bath) + scale(predmass), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 5
-feedRateDf%>%
-  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+TXdata%>%
   glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 6
 feedRateDf%>%
-  filter(site == "TX", numEaten > 0, pond != "Control")%>%
   glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|bath), family = "binomial", data =.,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 7
-model7 <- feedRateDf%>%
-  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+model7 <- TXdata%>%
   glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
 #Model 8
-feedRateDf%>%
-  filter(site == "TX", numEaten > 0, pond != "Control")%>%
+TXdata%>%
   glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|bath), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
@@ -164,7 +177,6 @@ feedRateDf%>%
 
 ##The delta AIC for those two is <2, so performing a likelihood ratio test
 
-library(lmtest)
 lrtest(model3, model7)
 
 #They aren't significantly different, so use model 7 since it's simpler
@@ -173,7 +185,7 @@ lrtest(model3, model7)
 
 MIglmer <- feedRateDf%>%
   filter(site == "MI", round(numEaten) >0, pond != "Control", temp < 35)%>%
-  glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
         control = glmerControl(optimizer = "bobyqa"))
 
 MOglmer <- feedRateDf%>%
@@ -202,9 +214,6 @@ Anova(TXglmer, 3)
 #Get predicted values and add to data frame
 ##MI
 
-###Create the subset data
-MIdata <- feedRateDf%>%
-  filter(site == "MI", round(numEaten) > 0, pond != "Control", temp < 35)
 
 ###Make the predator masses equal average value to smooth the prediction curve
 MIdata$predmass <- mean(MIdata$predmass) #Make the predator masses equal average value to smooth the prediction curve
@@ -224,9 +233,7 @@ MIfit2 <- MIdata%>%
 
 
 ##MO
-###Create the subset data
-MOdata <- feedRateDf%>%
-  filter(site == "MO", round(numEaten) > 0, pond != "Control", temp < 35)
+
 
 ###Make the predator masses equal average value to smooth the prediction curve
 MOdata$predmass <- mean(MOdata$predmass) #Make the predator masses equal average value to smooth the prediction curve
@@ -242,9 +249,6 @@ MOfit2 <- MOdata%>%
          upr = unname(t(data.frame(MOfit$ci.fit))[,2]))
 
 ##TX
-###Create the subset data
-TXdata <- feedRateDf%>%
-  filter(site == "TX", round(numEaten) > 0, pond != "Control", temp < 35)
 
 ###Make the predator masses equal average value to smooth the prediction curve
 TXdata$predmass <- mean(TXdata$predmass) 
@@ -276,10 +280,11 @@ final.data <- rbind(MIfit2, MOfit2, TXfit2)
 MIToptDf <- data.frame(Topt = NULL, bath = NULL, pond = NULL, predmass = NULL, sim = NULL)
 
 #For loop to resample data, run model with resampled data, extract Topt, and add Topt to data frame
-for (i in 1:10){
+for (i in 1:500){
   
   #Resample data
   rand.df <- MIdata%>%
+    group_by(pond)%>%
     slice_sample(prop = 1, replace = T)
   
   ##Run model with resampled data. Set it to continue the loop even if the model generates an error, which occasionally happens with some resampled data
@@ -287,11 +292,11 @@ for (i in 1:10){
     glmer(cbind(round(numEaten), round(100-numEaten)) ~ poly(temp, 2) + (1|pond) + (1|bath) + scale(predmass), family = "binomial", data = .,
           control = glmerControl(optimizer = "bobyqa"))
   
-  #Create data set of dummy variables to get precise estimate of Topt, then extract predited Topt.
+  #Create data set of dummy variables to get precise estimate of Topt, then extract predicted Topt.
  
   ndat <- data.frame(temp = seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), 
                      predmass = mean(rand.df$predmass))
-  ##Extract no pred, no comp topt and add to df
+  ##Extract topt and add to df
   MIToptDf <- data.frame(Topt = ndat[which.max(predict(model, newdata = ndat, type = "response", re.form = ~0 )),1] , sim = i)%>%
     rbind(MIToptDf)
   
@@ -312,6 +317,7 @@ MIavgToptDf <- MIToptDf%>%
             uprCI = quantile(Topt, 0.975))%>%
   mutate(predmass = mean(MIdata$predmass))%>%
   mutate(numEaten = round(predict(MIglmer, newdata = ., type = "response", re.form = ~ 0 )))
+
 
 
 
@@ -411,3 +417,59 @@ final.data%>%
   scale_fill_manual(values = cbPalette) +
   ylim(0,50)
 
+
+
+
+
+
+################################
+#Full model with all Sites
+library()
+feedRateDf%>%
+  glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) + (1|pond) + (1|bath), data = .,
+        family = "binomial", control = glmerControl(optimizer = "bobyqa",optCtrl = list(maxfun = 1000)))
+
+#Mixed effects model won't converge. Trying main effects model.
+#Compare AICc's to select best fit model
+
+
+feedRateDf%>%
+  filter(pond != "Control")%>%
+  glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) + scale(predmass), 
+             family = "binomial", data = .)%>%
+  plot()
+
+#Top two models are full (AICc = 2577.966) and full without predmass (2686.456). ∆AICc is small. Try likelihood ratio test
+
+
+lrtest(glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) , 
+      family = "binomial", data = filter(feedRateDf, pond != "Control")),
+      glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) + scale(predmass), 
+          family = "binomial", data = filter(feedRateDf, pond != "Control")))
+
+#Two models fit significantly differently. Move forward with the full model
+
+fullGlm <- feedRateDf%>%
+  glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) + scale(predmass), 
+      family = "binomial", data = .)
+
+
+#Get predicted values and add to observed value data set
+feedRateDf2 <- feedRateDf%>%
+  group_by(site)%>%
+  mutate(predmass = mean(predmass)) %>%
+  ungroup()%>%
+  mutate(fit = predict(fullGlm, type = "response", newdata = .) *100,
+         se = predict(fullGlm, type = "response", se.fit = T, newdata = .)$se.fit * 100) %>%
+  group_by(pond)%>%
+  mutate(predmass = mean(predmass))
+
+
+feedRateDf2%>%
+  ggplot(aes(x = temp, y = numEaten)) + 
+    geom_point() +
+    geom_line(aes(y = fit)) +
+    geom_ribbon(aes(ymin = fit - se, ymax = fit + se, alpha = 0.5)) +
+    facet_wrap(vars(site)) +
+    theme_classic()
+  
