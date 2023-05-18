@@ -424,22 +424,22 @@ final.data%>%
 
 ################################
 #Full model with all Sites
-library()
+#Try mixed effects first
 feedRateDf%>%
   glmer(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) + (1|pond) + (1|bath), data = .,
         family = "binomial", control = glmerControl(optimizer = "bobyqa",optCtrl = list(maxfun = 1000)))
 
 #Mixed effects model won't converge. Trying main effects model.
-#Compare AICc's to select best fit model
 
+#Compare AICc's to select best fit model
 
 feedRateDf%>%
   filter(pond != "Control")%>%
-  glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) + scale(predmass), 
+  glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2), 
              family = "binomial", data = .)%>%
-  plot()
+  AICc()
 
-#Top two models are full (AICc = 2577.966) and full without predmass (2686.456). ∆AICc is small. Try likelihood ratio test
+#Top two models are full (AICc = 2577.966) and full without predmass (2580.033). ∆AICc is small. Try likelihood ratio test
 
 
 lrtest(glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) , 
@@ -447,15 +447,21 @@ lrtest(glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) ,
       glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) + scale(predmass), 
           family = "binomial", data = filter(feedRateDf, pond != "Control")))
 
+
 #Two models fit significantly differently. Move forward with the full model
 
 fullGlm <- feedRateDf%>%
-  glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) + scale(predmass), 
+  #filter(numEaten > 0)%>%
+  glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + site*I(temp^2) + scale(predmass), 
       family = "binomial", data = .)
 
+fullNb <- feedRateDf%>%
+  #filter(numEaten > 0)%>%
+  glm.nb(numEaten/100 ~ temp*site + site*I(temp^2) + scale(predmass), data = .)
 
 #Get predicted values and add to observed value data set
 feedRateDf2 <- feedRateDf%>%
+  #filter(numEaten > 0)%>%
   group_by(site)%>%
   mutate(predmass = mean(predmass)) %>%
   ungroup()%>%
