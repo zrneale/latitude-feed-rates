@@ -59,6 +59,7 @@ feedRateDf <- df%>%
   left_join(dplyr::select(controlFit2, site, chamber, bath, backMort), by = c("site", "chamber", "bath"))%>%
   mutate(numEaten = dead - backMort)%>%
   mutate(numEaten = replace(numEaten, numEaten < 0, 0))%>%
+  filter(numEaten > 0)%>%
   filter(pond != "Control")
 
 
@@ -434,34 +435,30 @@ feedRateDf%>%
 #Compare AICc's to select best fit model
 
 feedRateDf%>%
-  filter(pond != "Control")%>%
-  glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2), 
+  glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2)*site + scale(predmass), 
              family = "binomial", data = .)%>%
   AICc()
 
-#Top two models are full (AICc = 2577.966) and full without predmass (2580.033). ∆AICc is small. Try likelihood ratio test
+#Top two models are full (2272.43) and full without predmass (2273.43). ∆AICc is small. Try likelihood ratio test
 
 
-lrtest(glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) , 
-      family = "binomial", data = filter(feedRateDf, pond != "Control")),
-      glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2) + scale(predmass), 
-          family = "binomial", data = filter(feedRateDf, pond != "Control")))
+lrtest(glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2)*site , 
+      family = "binomial", data = feedRateDf),
+      glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2)*site + scale(predmass), 
+          family = "binomial", data = feedRateDf))
 
 
-#Two models fit significantly differently. Move forward with the full model
+#Two models not fit significantly differently. Move forward with the simpler model
 
 fullGlm <- feedRateDf%>%
-  #filter(numEaten > 0)%>%
-  glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + site*I(temp^2) + scale(predmass), 
+  glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + site*I(temp^2), 
       family = "binomial", data = .)
 
 fullNb <- feedRateDf%>%
-  #filter(numEaten > 0)%>%
   glm.nb(numEaten/100 ~ temp*site + site*I(temp^2) + scale(predmass), data = .)
 
 #Get predicted values and add to observed value data set
 feedRateDf2 <- feedRateDf%>%
-  #filter(numEaten > 0)%>%
   group_by(site)%>%
   mutate(predmass = mean(predmass)) %>%
   ungroup()%>%

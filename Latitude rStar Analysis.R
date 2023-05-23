@@ -24,11 +24,11 @@ backMortGlmer <- controlDf%>%
   glmer(data = ., cbind(surv, dead) ~ temp  + (1|site) + (1|bath), family = "binomial")
 
 
-##Obtain siteicted values of background mortality
-library(bootsiteictlme4)
+##Obtain predicted values of background mortality
+library(bootpredictlme4)
 
 controlFit <- controlDf%>%
-  siteict(backMortGlmer, newdata = ., re.form = NA, se.fit = T, nsim = 1000, type = "response")
+  predict(backMortGlmer, newdata = ., re.form = NA, se.fit = T, nsim = 1000, type = "response")
 
 controlFit2 <- controlDf%>%
   mutate(fit = unname(data.frame(controlFit$fit)$controlFit.fit),
@@ -67,8 +67,6 @@ feedRateDf <- df%>%
 #STAR method of analysis
 library(rSTAR)
 
-numEaten <- round(feedRateDf$numEaten)
-
 #Make model matrix
 
 feedRateDf$pond <- droplevels(feedRateDf$pond)
@@ -93,9 +91,9 @@ y = round(feedRateDf$numEaten)
 #x = feedRateDf$temp
 
 
-#Function to calculate p values for each siteictor
-get_p <- function(siteictor_column){
-  j = siteictor_column #corresponds to the column number of the effect to be tested
+#Function to calculate p values for each predictor
+get_p <- function(predictor_column){
+  j = predictor_column #corresponds to the column number of the effect to be tested
   fit_0 = star_EM(y = y,
                         estimator = function(y) lm(y ~ X[,-j] - 1),
                         transformation = transformation)
@@ -118,69 +116,28 @@ get_p(8) #temp:TX
 
 
 
-# p-value for Temp (likelihood ratio test):
-
-j = 2 #temperature column
-fit_0 = star_EM(y = y,
-                      estimator = function(y) lm(y ~ X[,-j] - 1),
-                      transformation = transformation)
-
-p_val_temp = pchisq(-2*(fit_0$logLik - fit$logLik),
-                    df = 1, lower.tail = FALSE)
-
-p_val_temp
-# p-value for Temp2 (likelihood ratio test):
-
-j = 3 #temperature squared column
-fit_0 = star_EM(y = y,
-                      estimator = function(y) lm(y ~ X[,j] - 1),
-                      transformation = transformation)
-
-p_val_temp2 = pchisq(-2*(fit_0$logLik - fit$logLik),
-                     df = 1, lower.tail = FALSE)
-
-p_val_temp2
-
-# p-value for site (likelihood ratio test):
-
-j = 1 #temperature column
-fit_0 = star_EM(y = y,
-                      estimator = function(y) lm(y ~ X[,-j] - 1),
-                      transformation = transformation)
-
-p_val_temp = pchisq(-2*(fit_0$logLik - fit$logLik),
-                    df = 1, lower.tail = FALSE)
 
 
 
+# Compute the predicted values. In order to get separate curves for particular sites, I'll add an out-of-sample matrix that only has one site and  repeat for each one
+##Matrix of MI values
+
+MI.X <- feedRateDf%>%
+  filter(site == "MI")%>%
+  model.matrix(numEaten ~ temp*site + I(temp^2) + scale(predmass), data = .)
+
+y.pred.MI = star_pred_dist(y, X, MI.X,  transformation = 'log')
 
 
-# Compute the siteicted values. In order to get separate curves for particular site x comp combinations, I'll add an out-of-sample matrix that only has one combination and iteratively repeat for each combo
-##Matrix of no site x no comp siteictors
-
-PulexNN.X <- feedRateDf%>%
-  filter(site == "N", Species == "Pulex")%>%
-  model.matrix(numEaten ~ poly(temp, 2)*site*Species, data = .)
-
-PulexNN <- feedRateDf%>%
-  filter(site == "N", Species == "Pulex")
-
-
-y = feedRateDf$numEaten
-X = feedRateDf$temp
-
-y.site = star_site_dist(y, X,  transformation = 'log')
-
-
-# Using these draws, compute siteiction intervals for STAR:
-Pulex.PI = t(apply(y.site, 2, quantile, c(0.05, 1 - 0.05)))
+# Using these draws, compute prediction intervals for STAR:
+MI.PI = t(apply(y.pred.MI, 2, quantile, c(0.05, 1 - 0.05)))
 
 
 # Plot the results: PIs and CIs
-plot(PulexNN$temp, PulexNN$numEaten, ylim = range(PulexNN$numEaten, Pulex.PI), main = 'STAR: 95% siteiction Intervals')
+plot(MIdf$temp, MIdf$numEaten, ylim = range(MIdf$numEaten, y.pred.MI), main = 'STAR: 95% prediction Intervals')
 lines(fit$fitted.values)
-lines(PulexNN$temp, Pulex.PI[,1], col='darkgray', type='s', lwd=4);
-lines(PulexNN$temp, Pulex.PI[,2], col='darkgray', type='s', lwd=4)
+lines(MIdf$temp, MI.PI[,1], col='darkgray', type='s', lwd=4);
+lines(MIdf$temp, MI.PI[,2], col='darkgray', type='s', lwd=4)
 
 
 
