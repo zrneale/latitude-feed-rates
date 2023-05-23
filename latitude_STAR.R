@@ -68,9 +68,7 @@ feedRateDf <- df%>%
 library(rSTAR)
 
 #Make model matrix
-
-feedRateDf$pond <- droplevels(feedRateDf$pond)
-X <- model.matrix(numEaten ~ temp*site + I(temp^2) + scale(predmass), data = feedRateDf)
+X <- model.matrix(numEaten ~ temp*site + I(temp^2)*site + scale(predmass), data = feedRateDf)
 
 #Dimensions
 n = nrow(X); p = ncol(X)
@@ -106,13 +104,13 @@ get_p <- function(predictor_column){
 
 #Get p values
 
-get_p(2) #Temp
-get_p(3) #MO
-get_p(4) #TX
-get_p(5) #Temp^2
+get_p(c(2,5.7:10)) #temp
+get_p(c(5, 9:10)) #temp^2
+get_p(c(3,4,7:10)) #site
+get_p(7:10) #site:temp
+get_p(9:10) #site:temp^2
 get_p(6) #predmass
-get_p(7) #temp:MO
-get_p(8) #temp:TX
+
 
 
 

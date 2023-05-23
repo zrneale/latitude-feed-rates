@@ -475,4 +475,9 @@ feedRateDf2%>%
     geom_ribbon(aes(ymin = fit - se, ymax = fit + se, alpha = 0.5)) +
     facet_wrap(vars(site)) +
     theme_classic()
+
+fullGlm <- feedRateDf[-c(45,60,62),]%>%
+  #filter(numEaten > 0)%>%
+  glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + site*I(temp^2) + scale(predmass), 
+      family = "binomial", data = .)
   
