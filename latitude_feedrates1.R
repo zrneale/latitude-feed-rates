@@ -321,14 +321,6 @@ MIavgToptDf <- MIToptDf%>%
 
 
 
-
-
-
-
-
-
-
-
 ###############################
 #Graph it
 
@@ -436,8 +428,9 @@ feedRateDf%>%
 
 feedRateDf%>%
   glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + I(temp^2)*site + scale(predmass), 
-             family = "binomial", data = .)%>%
-  AICc()
+             family = "binomial", data = .)
+
+
 
 #Top two models are full (2272.43) and full without predmass (2273.43). ∆AICc is small. Try likelihood ratio test
 
@@ -455,7 +448,7 @@ fullGlm <- feedRateDf%>%
       family = "binomial", data = .)
 
 fullGlm <- feedRateDf[-c(45,60,62),]%>%
-  #filter(numEaten > 0)%>%
+ # filter(numEaten > 0)%>%
   glm(cbind(round(numEaten), round(100-numEaten)) ~ temp*site + site*I(temp^2) + scale(predmass), 
       family = "binomial", data = .)
 
@@ -465,7 +458,7 @@ feedRateDf2 <- feedRateDf%>%
   mutate(predmass = mean(predmass)) %>%
   ungroup()%>%
   mutate(fit = predict(fullGlm, type = "response", newdata = .) *100,
-         se = predict(fullGlm, type = "response", se.fit = T, newdata = .)$se.fit * 100) %>%
+         se = predict(fullGlm,  se.fit = T, type = "response", newdata = .)$se.fit * 100) %>%
   group_by(pond)%>%
   mutate(predmass = mean(predmass))
 
@@ -473,7 +466,7 @@ feedRateDf%>%
   group_by(site)%>%
   mutate(predmass = mean(predmass)) %>%
   ungroup()%>%
-  predict(fullGlm, type = "response", newdata = ., interval = "confidence")
+  predict(fullGlm, newdata = ., se.fit = T)
 
 
 
