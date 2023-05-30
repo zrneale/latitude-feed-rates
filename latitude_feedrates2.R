@@ -84,8 +84,17 @@ lrtest(glm(cbind(numEaten, 100-numEaten) ~ temp*site + I(temp^2)*site ,
 
 
 #Two models fit significantly differently. Move forward with the full model
+#Comparing models with and without outliers
+feedRateDf%>%
+  glm(cbind(numEaten, 100-numEaten) ~ temp*site + site*I(temp^2) + scale(predmass), 
+      family = "binomial", data = .)%>%
+  summary()
+feedRateDf[-c(15, 23, 43), ]%>%
+  glm(cbind(numEaten, 100-numEaten) ~ temp*site + site*I(temp^2) + scale(predmass), 
+      family = "binomial", data = .)%>%
+  summary()
 
-fullGlm <- feedRateDf%>%
+fullGlm <- feedRateDf[-c(15, 23, 43), ]%>%
   glm(cbind(numEaten, 100-numEaten) ~ temp*site + site*I(temp^2) + scale(predmass), 
       family = "binomial", data = .)
 
@@ -94,11 +103,12 @@ cooks.distance(fullGlm)
 as.numeric(names(cooks.distance(fullGlm))[(cooks.distance(fullGlm) > (4/nrow(feedRateDf)))])
 
 
-# #Create df of the site-specific average predator masses for generating predicted values
+# #Create df of the site-specific average predator masses for generating smooth predicted curves
 avgPredmassDf <- data.frame(site = c("MI", "MO", "TX"),
                             predmass = c(mean(filter(feedRateDf, site == "MI")$predmass),
                                          mean(filter(feedRateDf, site == "MO")$predmass),
                                          mean(filter(feedRateDf, site == "TX")$predmass)))
+
 #Create df of predicted values
 fitFeedDf <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), times = 3),
            site = as.factor(rep(c("MI", "MO", "TX"), each = 2729)))%>%
@@ -107,25 +117,31 @@ fitFeedDf <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp
          se = predict(fullGlm,  se.fit = T, type = "response", newdata = .)$se.fit * 100)
 
 
-
 #############################
 #Calculate Topt's with bootstrap analysis
 
 #Create empty data frame that the Topt's will be inserted into
 ToptDf <- data.frame(Topt = NULL, site = NULL, sim = NULL)
 
-##Create data set of dummy variables to get more precise estimate of Topt in predict function
+##Create data sets of dummy variables for each site to get more precise estimate of Topt in predict function
 
-ndat <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), each = 3))%>%
-  mutate(site = as.factor(rep(c("MI", "MO", "TX"), each = 1, length.out = length(temp))))%>%
+MIndat <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), each = 3),
+                     site = "MI")%>%
   left_join(avgPredmassDf, by = "site")
 
+MOndat <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), each = 3),
+                     site = "MO")%>%
+  left_join(avgPredmassDf, by = "site")
+
+TXndat <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), each = 3),
+                     site = "TX")%>%
+  left_join(avgPredmassDf, by = "site")
 
 ##For loop to resample data, run model with resampled data, extract Topt, and add Topt to data frame
-for (i in 1:10){
+for (i in 1:1000){
 
   #Resample data
-  rand.df <- feedRateDf%>%
+  rand.df <- feedRateDf[-c(15, 23, 43), ]%>%
     group_by(site)%>%
     slice_sample(prop = 1, replace = T)
 
@@ -135,17 +151,17 @@ for (i in 1:10){
         family = "binomial", data = .)
 
   ##Extract Michigan Topt and add to ToptDf
-  ToptDf <- data.frame(Topt = ndat[which.max(predict(model, newdata = filter(ndat, site =="MI"), 
+  ToptDf <- data.frame(Topt = MIndat[which.max(predict(model, newdata = MIndat, 
                                                      type = "response")),1] , sim = i, site = (c("MI")))%>%
     rbind(ToptDf)
 
   ##Extract Missouri Topt and add to ToptDf
-  ToptDf <- data.frame(Topt = ndat[which.max(predict(model, newdata = filter(ndat, site == "MO"), 
+  ToptDf <- data.frame(Topt = MOndat[which.max(predict(model, newdata = MOndat, 
                                                      type = "response")),1] , sim = i, site = (c("MO")))%>%
     rbind(ToptDf)
 
   ##Extract Missouri Topt and add to ToptDf
-  ToptDf <- data.frame(Topt = ndat[which.max(predict(model, newdata = filter(ndat, site == "TX"), 
+  ToptDf <- data.frame(Topt = TXndat[which.max(predict(model, newdata = TXndat, 
                                                      type = "response")),1] , sim = i, site = (c("TX")))%>%
     rbind(ToptDf)
 }
@@ -154,7 +170,7 @@ for (i in 1:10){
 #write.csv(ToptDf, "Data/Topt.csv", row.names = F)
 
 #Uncomment if uploading a previously saved randomized df
-ToptDf <- read.csv("Data/Topt.csv")
+#ToptDf <- read.csv("Data/Topt.csv")
 
 
 #Create df with average Topt's and confidence intervals for plotting
@@ -194,15 +210,16 @@ cbPalette <- c("#CC79A7", "#78C1EA", "#009E73", "#E69F00", "#D55E00", "#0072B2")
 fitFeedDf%>%
   ggplot(aes(x = temp, y = fit, color = site, fill = site)) +
   facet_wrap(~site, labeller = labeller(site = c("MI" = "Michigan", "MO" = "Missouri", "TX" = "Texas"))) +
-  geom_point(data = feedRateDf, aes(y = numEaten)) +
+  geom_point(data = feedRateDf[c(15, 23, 43), ], aes(y = numEaten)) +
   geom_line(linewidth = 0.3) +
   geom_ribbon(alpha = 0.3, aes(ymin = fit - se, ymax = fit + se), linetype = 0) +
   theme_classic() +
-  labs(x = "Temperature (°C)", y = "Number of Prey Eaten ± CI") +   
+  labs(x = "Temperature (°C)", y = "Number of Prey Eaten ± CI", title = "Outliers excluded") +   
   theme(axis.title = element_text(size = 24),
         axis.text = element_text(size=20),
         strip.text = element_text(size=16),
-        legend.position = 0) +
+        legend.position = 0,
+        title = element_text(size = 20)) +
   scale_color_manual(values = cbPalette) +
   scale_fill_manual(values = cbPalette) +
   geom_point(data = avgToptDf, aes(x = temp, y = numEaten), color = "Black", size = 3) +
