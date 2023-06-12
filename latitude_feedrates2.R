@@ -58,14 +58,6 @@ feedRateDf <- df%>%
 
 ################################
 #Full model with all Sites
-
-#Try mixed effects first
-feedRateDf%>%
-  glmer(cbind(numEaten, 100-numEaten) ~ temp*site + I(temp^2) + (1|pond) + (1|bath), data = .,
-        family = "binomial", control = glmerControl(optimizer = "bobyqa",optCtrl = list(maxfun = 1000)))
-
-#Mixed effects model won't converge. Trying main effects model.
-
 #Compare AICc's to select best fit model
 
 library(MuMIn)
@@ -88,26 +80,49 @@ lrtest(glm(cbind(numEaten, 100-numEaten) ~ temp*site + I(temp^2)*site ,
 feedRateDf%>%
   glm(cbind(numEaten, 100-numEaten) ~ temp*site + site*I(temp^2) + scale(predmass), 
       family = "binomial", data = .)%>%
-  summary()
-feedRateDf[-c(15, 23, 43), ]%>%
+  plot(id.n = 5)
+feedRateDf[-c(15, 23, 43, 54, 55), ]%>%
   glm(cbind(numEaten, 100-numEaten) ~ temp*site + site*I(temp^2) + scale(predmass), 
       family = "binomial", data = .)%>%
-  summary()
+  plot()
 
-fullGlm <- feedRateDf[-c(15, 23, 43), ]%>%
+fullGlm <- feedRateDf%>%
   glm(cbind(numEaten, 100-numEaten) ~ temp*site + site*I(temp^2) + scale(predmass), 
       family = "binomial", data = .)
 
-cooks.distance(fullGlm)
 
-as.numeric(names(cooks.distance(fullGlm))[(cooks.distance(fullGlm) > (4/nrow(feedRateDf)))])
 
+#Extract site-specific temperature coefficients
+coefDf <- summary(fullGlm)$coefficients%>%
+  data.frame()%>%
+  rownames_to_column(var = "Term")
+  
+data.frame(site = c(rep(c("MI", "MO", "TX"), 2)),
+           term = c(rep("Temperature", 3), rep("Temperature2", 3)),
+           coef.link = c(coefDf[2,2], #MI temp
+                           coefDf[2,2] + coefDf[7,2], #MO temp
+                           coefDf[2,2] + coefDf[8,2], #TX temp
+                           coefDf[5,2], #MI temp2
+                           coefDf[5,2] + coefDf[9,2], #MO temp2
+                           coefDf[5,2] + coefDf[10,2]), #TX temp2
+           se.link = c(coefDf[2,3], #MI temp
+                  coefDf[2,3] + coefDf[7,3], #MO temp
+                  coefDf[2,3] + coefDf[8,3], #TX temp,
+                  coefDf[5,3], #MI temp2
+                  coefDf[5,3] + coefDf[9,3], #MO temp2
+                  coefDf[5,3] + coefDf[10,3]))%>% #TX temp2 
+  mutate(coef.inv = exp(coef.link), #Change these functions to the desired back-transformation formula
+         se.inv = exp(se.link))%>%
+  view()
+           
 
 # #Create df of the site-specific average predator masses for generating smooth predicted curves
 avgPredmassDf <- data.frame(site = c("MI", "MO", "TX"),
                             predmass = c(mean(filter(feedRateDf, site == "MI")$predmass),
                                          mean(filter(feedRateDf, site == "MO")$predmass),
                                          mean(filter(feedRateDf, site == "TX")$predmass)))
+
+#####Manual t test route
 
 #Create df of predicted values
 fitFeedDf <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), times = 3),
@@ -125,25 +140,34 @@ ToptDf <- data.frame(Topt = NULL, site = NULL, sim = NULL)
 
 ##Create data sets of dummy variables for each site to get more precise estimate of Topt in predict function
 
-MIndat <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), each = 3),
+MIndat <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01)),
                      site = "MI")%>%
   left_join(avgPredmassDf, by = "site")
 
-MOndat <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), each = 3),
+MOndat <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01)),
                      site = "MO")%>%
   left_join(avgPredmassDf, by = "site")
 
-TXndat <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), each = 3),
+TXndat <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01)),
                      site = "TX")%>%
   left_join(avgPredmassDf, by = "site")
+
+#Create empty df to insert the randomized data used in each simulation
+randomized <- data.frame(site = NULL, predmass = NULL, temp = NULL, numEaten = NULL, sim = NULL)
 
 ##For loop to resample data, run model with resampled data, extract Topt, and add Topt to data frame
 for (i in 1:1000){
 
   #Resample data
-  rand.df <- feedRateDf[-c(15, 23, 43), ]%>%
+  rand.df <- feedRateDf%>%
+    dplyr::select(site, predmass, temp, numEaten)%>%
     group_by(site)%>%
     slice_sample(prop = 1, replace = T)
+  
+  #Insert the resampled data into randomized df
+  randomized <- rand.df%>%
+    mutate(sim = i)%>%
+    rbind(randomized)
 
   ##Run model with resampled data. Set it to continue the loop even if the model generates an error, which occasionally happens with some resampled data
   model <- rand.df%>%
@@ -164,6 +188,7 @@ for (i in 1:1000){
   ToptDf <- data.frame(Topt = TXndat[which.max(predict(model, newdata = TXndat, 
                                                      type = "response")),1] , sim = i, site = (c("TX")))%>%
     rbind(ToptDf)
+  
 }
 
 #Uncomment to save the randomized data set
@@ -210,11 +235,11 @@ cbPalette <- c("#CC79A7", "#78C1EA", "#009E73", "#E69F00", "#D55E00", "#0072B2")
 fitFeedDf%>%
   ggplot(aes(x = temp, y = fit, color = site, fill = site)) +
   facet_wrap(~site, labeller = labeller(site = c("MI" = "Michigan", "MO" = "Missouri", "TX" = "Texas"))) +
-  geom_point(data = feedRateDf[c(15, 23, 43), ], aes(y = numEaten)) +
-  geom_line(linewidth = 0.3) +
-  geom_ribbon(alpha = 0.3, aes(ymin = fit - se, ymax = fit + se), linetype = 0) +
+  geom_point(data = feedRateDf, aes(y = numEaten)) +
+  geom_line(linewidth = 1) +
+  geom_ribbon(alpha = 0.2, aes(ymin = fit - 2*se, ymax = fit + 2*se), linetype = 0) +
   theme_classic() +
-  labs(x = "Temperature (°C)", y = "Number of Prey Eaten ± CI", title = "Outliers excluded") +   
+  labs(x = "Temperature (°C)", y = "Number of Prey Eaten") +   
   theme(axis.title = element_text(size = 24),
         axis.text = element_text(size=20),
         strip.text = element_text(size=16),
@@ -229,6 +254,6 @@ fitFeedDf%>%
 #color = "black", alpha = 0.25, fill = "black", linetype = 0)
 
 
-#ggsave("Figures/Latresults1.pdf", width = 11.95, height = 5.37)
+ggsave("Figures/latfig.jpeg", width = 11.95, height = 5.37)
 
 
