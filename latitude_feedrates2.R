@@ -87,16 +87,18 @@ feedRateDf[-c(15, 23, 43, 54, 55), ]%>%
   plot()
 
 fullGlm <- feedRateDf%>%
-  glm(cbind(numEaten, 100-numEaten) ~ temp*site + site*I(temp^2) + scale(predmass), 
+  mutate(temp2 = temp^2)%>%
+  glm(cbind(numEaten, 100-numEaten) ~ temp*site + site*(temp2) + scale(predmass), 
       family = "binomial", data = .)
 
 
 
-#Extract site-specific temperature coefficients
+#Extract model coefficients
 coefDf <- summary(fullGlm)$coefficients%>%
   data.frame()%>%
   rownames_to_column(var = "Term")
-  
+
+#Create table with site-specific coefficients on link and response scales. MO and TX coefficients need to be added to the MI coefficient, which is the baseline
 data.frame(site = c(rep(c("MI", "MO", "TX"), 2)),
            term = c(rep("Temperature", 3), rep("Temperature2", 3)),
            coef.link = c(coefDf[2,2], #MI temp
@@ -111,9 +113,8 @@ data.frame(site = c(rep(c("MI", "MO", "TX"), 2)),
                   coefDf[5,3], #MI temp2
                   coefDf[5,3] + coefDf[9,3], #MO temp2
                   coefDf[5,3] + coefDf[10,3]))%>% #TX temp2 
-  mutate(coef.inv = exp(coef.link), #Change these functions to the desired back-transformation formula
-         se.inv = exp(se.link))%>%
-  view()
+  mutate(coef.resp = exp(coef.link), #Change these functions to the desired back-transformation formula
+         se.resp = exp(se.link))
            
 
 # #Create df of the site-specific average predator masses for generating smooth predicted curves
