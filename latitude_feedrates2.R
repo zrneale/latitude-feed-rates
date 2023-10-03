@@ -37,8 +37,8 @@ controlFit2%>%
   geom_ribbon(aes(ymax = 100 - upr*100, ymin = 100 - lwr*100), alpha = 0.25, linetype = 0) +
   theme_classic() +
   geom_point(data = filter(df, pond == "Control", temp >35), shape = 1, size = 3) + #Include the outlier point that was excluded from analysis
-  labs(y = expression(paste(italic("Daphnia pulex"), " background mortality ± CI")),
-       x = "Temperature (C)") +
+  labs(y = expression(paste(italic("Daphnia pulex"), " background mortality")),
+       x = "Temperature (°C)") +
   theme(axis.title = element_text(size = 18),
         axis.text = element_text(size=16))
 
@@ -87,8 +87,7 @@ feedRateDf[-c(15, 23, 43, 54, 55), ]%>%
   plot()
 
 fullGlm <- feedRateDf%>%
-  mutate(temp2 = temp^2)%>%
-  glm(cbind(numEaten, 100-numEaten) ~ temp*site + site*(temp2) + scale(predmass), 
+  glm(cbind(numEaten, 100-numEaten) ~ temp*site + site*I(temp^2) + scale(predmass), 
       family = "binomial", data = .)
 
 
@@ -123,14 +122,18 @@ avgPredmassDf <- data.frame(site = c("MI", "MO", "TX"),
                                          mean(filter(feedRateDf, site == "MO")$predmass),
                                          mean(filter(feedRateDf, site == "TX")$predmass)))
 
-#####Manual t test route
 
+#Get reverse transformation function for generating predicted values on response scale
+ilink<-fullGlm$family$linkinv
 #Create df of predicted values
 fitFeedDf <- data.frame(temp = rep(seq(min(feedRateDf$temp), max(feedRateDf$temp), by = 0.01), times = 3),
            site = as.factor(rep(c("MI", "MO", "TX"), each = 2729)))%>%
   left_join(avgPredmassDf, by = "site")%>%
-  mutate(fit = predict(fullGlm, type = "response", newdata = .) *100,
-         se = predict(fullGlm,  se.fit = T, type = "response", newdata = .)$se.fit * 100)
+  mutate(fit_link = predict(fullGlm, type = "link", newdata = .))%>%
+  mutate(se_link = predict(fullGlm, type = "link", newdata = ., se.fit = T)$se.fit)%>%
+  mutate(fit_resp = (ilink(fit_link))*100,
+         lwr = (ilink(fit_link - 1.96*se_link))*100,
+         upr = (ilink(fit_link + 1.96*se_link))*100)
 
 
 #############################
@@ -232,29 +235,34 @@ ToptDiffDf <- ToptDf%>%
 
 cbPalette <- c("#CC79A7", "#78C1EA", "#009E73", "#E69F00", "#D55E00", "#0072B2")
 
+
+##Df of historic mean temperatures of month of collection for graphing
+siteTemp <- data.frame(site = c("MI", "MO", "TX"), temp = c(21.4, 25.9, 28.5))
+
 ##Faceted by site
 fitFeedDf%>%
-  ggplot(aes(x = temp, y = fit, color = site, fill = site)) +
+  ggplot(aes(x = temp, y = fit_resp, color = site, fill = site)) +
   facet_wrap(~site, labeller = labeller(site = c("MI" = "Michigan", "MO" = "Missouri", "TX" = "Texas"))) +
-  geom_point(data = feedRateDf, aes(y = numEaten)) +
-  geom_line(linewidth = 1) +
-  geom_ribbon(alpha = 0.2, aes(ymin = fit - 2*se, ymax = fit + 2*se), linetype = 0) +
+  geom_point(data = feedRateDf, aes(y = numEaten), color = "white") +
+  geom_line(linewidth = 1, color = "white") +
+  #geom_ribbon(alpha = 0.2, aes(ymin = lwr, ymax = upr), linetype = 0) +
+  geom_vline(data = siteTemp, aes(xintercept = temp), linetype = 3, linewidth = 0.7) +
   theme_classic() +
   labs(x = "Temperature (°C)", y = "Number of Prey Eaten") +   
   theme(axis.title = element_text(size = 24),
         axis.text = element_text(size=20),
-        strip.text = element_text(size=16),
+        strip.text = element_text(size=20),
         legend.position = 0,
         title = element_text(size = 20)) +
   scale_color_manual(values = cbPalette) +
-  scale_fill_manual(values = cbPalette) +
-  geom_point(data = avgToptDf, aes(x = temp, y = numEaten), color = "Black", size = 3) +
-  geom_linerange(data = avgToptDf, aes(xmin = lwrCI, xmax = uprCI, y = numEaten), color = "Black")
+  scale_fill_manual(values = cbPalette) 
+  #geom_point(data = avgToptDf, aes(x = temp, y = numEaten), color = "Black", size = 3) +
+  #geom_linerange(data = avgToptDf, aes(xmin = lwrCI, xmax = uprCI, y = numEaten), color = "Black")
 #geom_line(data = controlFit2, aes(x = temp, y = backMort), color = "Black") +
 #geom_ribbon(data = controlFit2, aes(ymin = 100 - lwr*100, ymax = 100 - upr*100), 
 #color = "black", alpha = 0.25, fill = "black", linetype = 0)
 
 
-ggsave("Figures/latfig.jpeg", width = 11.95, height = 5.37)
+ggsave("Figures/latfig2.jpeg", width = 11.95, height = 5.37)
 
 
