@@ -7,6 +7,7 @@ library(tidyverse)
 df <- read.csv("Data/lat-feed-data.csv")%>%
   mutate(across(c(site, chamber, bath, pond, id), as.factor))
 
+
 #Climate data
 climate <- read.csv("Data/climates.csv")%>%
   mutate(across(site, as.factor),
@@ -309,13 +310,13 @@ fitFeedDf%>%
         title = element_text(size = 20)) +
   scale_color_manual(values = cbPalette) +
   scale_fill_manual(values = cbPalette) +
-  geom_point(data = avgToptDf, aes(x = temp, y = numEaten), color = "Black", size = 3) +
-  geom_linerange(data = avgToptDf, aes(xmin = lwrCI, xmax = uprCI, y = numEaten), color = "Black")
+  geom_point(data = filter(avgToptDf, site == "MI"), aes(x = temp, y = numEaten), color = "Black", size = 3) +
+  geom_linerange(data = filter(avgToptDf, site == "MI"), aes(xmin = lwrCI, xmax = uprCI, y = numEaten), color = "Black")
 #geom_line(data = controlFit2, aes(x = temp, y = backMort), color = "Black") + #These lines add the background mortality fit values
 #geom_ribbon(data = controlFit2, aes(ymin = 100 - lwr*100, ymax = 100 - upr*100), 
 #color = "black", alpha = 0.25, fill = "black", linetype = 0)
 
 
-ggsave("Figures/latfig.jpeg", width = 11.95, height = 5.37)
+ggsave("Figures/Fig3.jpeg", width = 11.95, height = 5.37)
 
 
